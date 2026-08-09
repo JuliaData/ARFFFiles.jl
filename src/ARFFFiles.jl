@@ -5,7 +5,7 @@ See `ARFFFiles.load` and `ARFFFiles.save`.
 """
 module ARFFFiles
 
-using Dates, Tables, CategoricalArrays, Parsers
+using Dates, Tables, CategoricalArrays, Parsers, OrderedCollections
 
 export ARFFType, ARFFNumericType, ARFFStringType, ARFFDateType, ARFFNominalType, ARFFRelation, ARFFAttribute, ARFFDataStart, ARFFHeader, ARFFReader, ARFFRow, ARFFChunks
 
@@ -553,7 +553,7 @@ function loadstreaming(io::IO, own::Bool=false; missingcols=:auto, missingnan::B
         push!(coltypeidxs, jt)
         push!(colkindidxs, jk)
     end
-    ARFFReader{typeof(io)}(io, own, header, colnames, colkinds, colmissings, automissingcols, falses(length(colmissings)), coltypes, colkindidxs, coltypeidxs, pools, dateformats, readers, ARFFTable(_schema([], []), Dict()), 0, 0, chunkbytes)
+    ARFFReader{typeof(io)}(io, own, header, colnames, colkinds, colmissings, automissingcols, falses(length(colmissings)), coltypes, colkindidxs, coltypeidxs, pools, dateformats, readers, ARFFTable(_schema([], []), OrderedDict()), 0, 0, chunkbytes)
 end
 
 loadstreaming(fn::AbstractString; opts...) = loadstreaming(open(fn), true; opts...)
@@ -600,7 +600,7 @@ function materialize_recursive(f, table::ARFFTable)
     end
     colnames = Symbol[]
     coltypes = Type[]
-    cols = Dict{Symbol,AbstractVector}()
+    cols = OrderedDict{Symbol,AbstractVector}()
     for (colname, coltype) in zip(schema.names, schema.types)
         col = Tables.getcolumn(table, colname)
         if ARFFTable <: coltype
@@ -915,7 +915,7 @@ function readcolumns(
     end
     # construct the output table
     schema = _schema(r.colnames, coltypes)
-    dict = Dict(zip(r.colnames, cols))
+    dict = OrderedDict(zip(r.colnames, cols))
     return ARFFTable(schema, dict)
 end
 
@@ -1025,7 +1025,7 @@ end
             str = Parsing.get_parsed_string(chunk, res)
             r2 = info
             r2.io = IOBuffer(String(str))
-            r2.chunk = ARFFTable(_schema([], []), Dict())
+            r2.chunk = ARFFTable(_schema([], []), OrderedDict())
             r2.chunklen = 0
             r2.chunkidx = 0
             push!(col, readcolumns(r2))
