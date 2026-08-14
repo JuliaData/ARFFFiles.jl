@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.1 (2026-08-14)
+* Bug fix: compatibility with Tables and OrderedCollections.
+
 ## 1.6.0 (2025-11-13)
 * Min supported Julia now 1.10.
 * Fix bug saving `NaN`.
