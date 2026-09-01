@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.2 (2026-09-01)
+* Relax compatibility constraints on OrderedCollections.
+
 ## 1.6.1 (2026-08-14)
 * Bug fix: compatibility with Tables and OrderedCollections.
 
