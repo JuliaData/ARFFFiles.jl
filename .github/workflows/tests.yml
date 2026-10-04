@@ -49,5 +49,5 @@ jobs:
       - uses: codecov/codecov-action@v7
         with:
           files: lcov.info
-          use_oidc: true
+          use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           fail_ci_if_error: true
