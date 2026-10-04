@@ -1,8 +1,8 @@
 # ARFFFiles.jl
 
 [![Project Status: Active – The project has reached a stable, usable state and is being actively developed.](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
-[![Test Status](https://github.com/cjdoris/ARFFFiles.jl/actions/workflows/tests.yml/badge.svg)](https://github.com/cjdoris/ARFFFiles.jl/actions/workflows/tests.yml)
-[![Codecov](https://codecov.io/gh/cjdoris/ARFFFiles.jl/branch/main/graph/badge.svg?token=1flP5128hZ)](https://codecov.io/gh/cjdoris/ARFFFiles.jl)
+[![Test Status](https://github.com/JuliaData/ARFFFiles.jl/actions/workflows/tests.yml/badge.svg)](https://github.com/JuliaData/ARFFFiles.jl/actions/workflows/tests.yml)
+[![Codecov](https://codecov.io/gh/JuliaData/ARFFFiles.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/JuliaData/ARFFFiles.jl)
 
 Load and save [ARFF (Attribute Relation File Format)](https://waikato.github.io/weka-wiki/formats_and_processing/arff/) files.
 
