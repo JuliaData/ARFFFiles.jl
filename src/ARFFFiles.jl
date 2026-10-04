@@ -286,7 +286,7 @@ function parse_index(data, pos, len, offset)
     return pos, value
 end
 
-options(qc; df=nothing) = Parsers.Options(sentinel=["?"], openquotechar=qc, closequotechar=qc, escapechar='\\', delim=',', quoted=true, comment="%", ignoreemptylines=true, dateformat=df)
+options(qc; df=nothing, delim=',') = Parsers.Options(sentinel=["?"], openquotechar=qc, closequotechar=qc, escapechar='\\', delim=delim, quoted=true, comment="%", ignoreemptylines=true, dateformat=df)
 
 function parse_datum(::Type{T}, data::AbstractVector{UInt8}, pos::Integer=1, len::Integer=length(data) - (pos - 1), opts1=parse_opts('''), opts2=parse_opts('"')) where {T}
     # first try parsing single-quoted
@@ -423,9 +423,9 @@ An object holding an IO stream of an ARFF file, used to access its data.
 Header information is in the `header` field, of type [`ARFFHeader`](@ref).
 
 It has the following functionality:
-- `nextrow(r)` returns the next row of data as a `NamedTuple{names, types}`, or `nothing` if everything has been read.
+- `nextrow(r)` returns the next row of data as an `ARFFRow`, or `nothing` if everything has been read.
 - `read(r, [n])` reads up to `n` rows as a vector.
-- `read!(xs, r)` reads up to `length(xs)` rows into the given vector, returning the number of rows read.
+- `read!(r, xs)` reads up to `length(xs)` rows into the given vector, returning the number of rows read.
 - `close(r)` closes the underlying IO stream, unless it was created with `own=false`.
 - `eof(r)` tests whether the IO stream is at the end.
 - Iteration yields rows of `r`.
@@ -436,6 +436,7 @@ mutable struct ARFFReader{IO}
     io::IO
     own_io::Bool
     header::ARFFHeader
+    delim::Char
     # columns
     colnames::Vector{Symbol} # name
     colkinds::Vector{Symbol} # :N, :S, :D, :C, :R (numeric, string, date, categorical, relational)
@@ -462,7 +463,7 @@ Base.eof(r::ARFFReader) = eof(r.io)
 _schema(names, types) = Tables.Schema(names, types, stored=true)
 
 """
-    loadstreaming(io::IO, own=false; [missingcols=true], [missingnan=false], [categorical=true], [chunkbytes=2^26])
+    loadstreaming(io::IO, own=false; [delim=','], [missingcols=:auto], [missingnan=false], [categorical=true], [chunkbytes=2^26])
     loadstreaming(filename::AbstractString; ...)
     loadstreaming(f, file, ...)
 
@@ -470,6 +471,9 @@ An [`ARFFReader`](@ref) object for reading the given ARFF file one record at a t
 
 If `f` is given, then this is like `f(loadstreaming(file, ...))` but ensures the reader is
 closed afterwards.
+
+Option `delim` chooses `','` (the default) or `'\\t'` as the delimiter for dense records,
+including nested relational data. Sparse records use commas between indexed entries.
 
 Option `missingcols` specifies which columns can contain missing data. It can be `:auto`
 (columns with missing values are automatically detected, the default), `:all` or `true` (all
@@ -486,7 +490,8 @@ or `String`.
 Option `chunkbytes` specifies approximately how many bytes to read per chunk when iterating
 over chunks or rows.
 """
-function loadstreaming(io::IO, own::Bool=false; missingcols=:auto, missingnan::Bool=false, categorical::Bool=true, chunkbytes::Integer=1 << 26, header::Union{ARFFHeader,Nothing}=nothing)
+function loadstreaming(io::IO, own::Bool=false; delim::Char=',', missingcols=:auto, missingnan::Bool=false, categorical::Bool=true, chunkbytes::Integer=1 << 26, header::Union{ARFFHeader,Nothing}=nothing)
+    delim in (',', '\t') || throw(ArgumentError("delim must be ',' or '\\t'"))
     automissingcols = missingcols === :auto
     missingcols =
         missingcols === true || missingcols === :auto || missingcols === :all ? c -> true :
@@ -537,7 +542,7 @@ function loadstreaming(io::IO, own::Bool=false; missingcols=:auto, missingnan::B
             t = ARFFTable
             jt = m ? (nRX += 1) : (nR += 1)
             jk = nR + nRX
-            rdr = loadstreaming(IOBuffer(); missingcols, missingnan, categorical, chunkbytes, header=ARFFHeader("<nested>", at.attributes))
+            rdr = loadstreaming(IOBuffer(); delim, missingcols, missingnan, categorical, chunkbytes, header=ARFFHeader("<nested>", at.attributes))
             rdr.automissingcols = automissingcols
             push!(readers, rdr)
         else
@@ -553,7 +558,7 @@ function loadstreaming(io::IO, own::Bool=false; missingcols=:auto, missingnan::B
         push!(coltypeidxs, jt)
         push!(colkindidxs, jk)
     end
-    ARFFReader{typeof(io)}(io, own, header, colnames, colkinds, colmissings, automissingcols, falses(length(colmissings)), coltypes, colkindidxs, coltypeidxs, pools, dateformats, readers, ARFFTable(_schema([], []), OrderedDict()), 0, 0, chunkbytes)
+    ARFFReader{typeof(io)}(io, own, header, delim, colnames, colkinds, colmissings, automissingcols, falses(length(colmissings)), coltypes, colkindidxs, coltypeidxs, pools, dateformats, readers, ARFFTable(_schema([], []), OrderedDict()), 0, 0, chunkbytes)
 end
 
 loadstreaming(fn::AbstractString; opts...) = loadstreaming(open(fn), true; opts...)
@@ -647,7 +652,7 @@ end
 loadchunks(fn::Union{IO,AbstractString}, args...; opts...) = loadchunks(identity, fn, args...; opts...)
 
 """
-    nextrow(r::ARFFReader{names, types}) :: Union{Nothing, NamedTuple{names, types}}
+    nextrow(r::ARFFReader) :: Union{Nothing, ARFFRow}
 
 The next row of data from the given `ARFFReader`, or `nothing` if everything has been read.
 """
@@ -707,13 +712,18 @@ The same can be achieved by iterating over `Tables.partitions(r)`.
 """
 function readcolumns(
     r::ARFFReader;
-    opts_sq=Parsing.options('''),
-    opts_dq=Parsing.options('"'),
-    date_opts_sq=[Parsing.options('''; df=df) for df in r.dateformats],
-    date_opts_dq=[Parsing.options('"'; df=df) for df in r.dateformats],
+    opts_sq=Parsing.options('''; delim=r.delim),
+    opts_dq=Parsing.options('"'; delim=r.delim),
+    date_opts_sq=[Parsing.options('''; df=df, delim=r.delim) for df in r.dateformats],
+    date_opts_dq=[Parsing.options('"'; df=df, delim=r.delim) for df in r.dateformats],
     maxbytes=nothing,
     chunkbytes=1 << 20,
 )::ARFFTable
+    sparse_opts = r.delim == ',' ? (opts_sq, opts_dq, date_opts_sq, date_opts_dq) : (
+        Parsing.options('''), Parsing.options('"'),
+        [Parsing.options('''; df=df) for df in r.dateformats],
+        [Parsing.options('"'; df=df) for df in r.dateformats],
+    )
     # initialize columns
     ncols = length(r.colnames)
     Ncols = Vector{Float64}[]
@@ -855,7 +865,7 @@ function readcolumns(
                         i += 1
                         1 ≤ i ≤ ncols || error("sparse column index out of range at byte $(pos+offset)")
                         pos = Parsing.skipspace(chunk, pos, len)
-                        pos, done = _readcolumns_readdatum(r, chunk, pos, len, offset, i, true, nrows, ncols, opts_sq, opts_dq, date_opts_sq, date_opts_dq, Ncols, NXcols, Scols, SXcols, Dcols, DXcols, Ccols, CXcols, Rcols, RXcols)
+                        pos, done = _readcolumns_readdatum(r, chunk, pos, len, offset, i, true, nrows, ncols, sparse_opts..., Ncols, NXcols, Scols, SXcols, Dcols, DXcols, Ccols, CXcols, Rcols, RXcols)
                         done && break
                     end
                 end
