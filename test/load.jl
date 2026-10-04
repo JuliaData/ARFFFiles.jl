@@ -491,3 +491,37 @@ end
         Base.close(chunks)
     end
 end
+
+@testitem "dense record delimiters" begin
+    using ARFFFiles, Dates, Tables, CategoricalArrays
+    header = "@RELATION delimiters\n@ATTRIBUTE num NUMERIC\n@ATTRIBUTE text STRING\n@ATTRIBUTE class {'yes, maybe', 'no\tlater'}\n@ATTRIBUTE stamp DATE \"yyyy-MM-dd\"\n@DATA\n"
+    records = [
+        ["1.5", "'hello\t, world'", "'yes, maybe'", "'2020-01-02'"],
+        ["-2.5", "\"say \\\"hello\\\"\"", "\"no\tlater\"", "\"2021-03-04\""],
+        ["?", "last", "?", "?"],
+    ]
+    for delim in (',', '\t'), newline in ("\n", "\r\n"), categorical in (true, false)
+        data = replace(header * join((join(row, delim) for row in records), "\n"), "\n" => newline)
+        classes = categorical ? CategoricalArray(["yes, maybe", "no\tlater", missing];levels=["yes, maybe", "no\tlater"]) : ["yes, maybe", "no\tlater", missing]
+        expected = (num=[1.5, -2.5, missing], text=["hello\t, world", "say \"hello\"", "last"], class=classes, stamp=[DateTime(2020,1,2), DateTime(2021,3,4), missing])
+        @testset "delim=$(repr(delim)), newline=$(repr(newline)), categorical=$categorical" begin
+            @test isequal(ARFFFiles.load(NamedTuple, IOBuffer(data);delim,categorical), expected)
+            reader = ARFFFiles.loadstreaming(IOBuffer(data);delim,categorical,chunkbytes=1)
+            @test isequal([NamedTuple(row) for row in reader], Tables.rowtable(expected))
+            chunks = ARFFFiles.loadchunks(IOBuffer(data);delim,categorical,chunkbytes=1)
+            @test isequal(reduce(vcat, ([NamedTuple(row) for row in Tables.rows(chunk)] for chunk in chunks)), Tables.rowtable(expected))
+        end
+    end
+    for delim in (',', '\t')
+        data = "@RELATION sparse\n@ATTRIBUTE a NUMERIC\n@ATTRIBUTE b NUMERIC\n@DATA\n{0 1,\t1 2}\n" * join(["3", "4"], delim) * "\n{}\n"
+        @test isequal(ARFFFiles.load(NamedTuple, IOBuffer(data);delim), (a=[1.0,3.0,0.0], b=[2.0,4.0,0.0]))
+        inner = join(["1", "'hot'"], delim) * "\n" * join(["2", "'warm'"], delim)
+        escaped = replace(inner, "\\" => "\\\\", "\t" => "\\t", "\n" => "\\n", "\"" => "\\\"")
+        nested_header = "@RELATION nested\n@ATTRIBUTE id NUMERIC\n@ATTRIBUTE data RELATIONAL\n@ATTRIBUTE n NUMERIC\n@ATTRIBUTE label STRING\n@END data\n@DATA\n"
+        nested_data = nested_header * join(["7", "\"" * escaped * "\""], delim) * "\n" * join(["8", "\"3" * (delim == '\t' ? "\\t" : ",") * "'last'\""], delim)
+        @test isequal(ARFFFiles.load(NamedTuple, IOBuffer(nested_data);delim), (id=[7.0,8.0],data=[(n=[1.0,2.0],label=["hot","warm"]),(n=[3.0],label=["last"])]))
+    end
+    @test_throws ArgumentError ARFFFiles.load(IOBuffer(header);delim=';')
+    comma_whitespace = "@RELATION whitespace\n@ATTRIBUTE a NUMERIC\n@ATTRIBUTE b STRING\n@DATA\n1\t,\t'value'\t\n"
+    @test ARFFFiles.load(NamedTuple,IOBuffer(comma_whitespace)) == (a=[1.0],b=["value"])
+end

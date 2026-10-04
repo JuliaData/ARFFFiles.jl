@@ -47,6 +47,7 @@ ARFFFiles.save("mytable.arff", df)
 **Types.** Numbers load as `Float64`, strings as `String`, dates as `DateTime`, nominals as `CategoricalValue{String}` (from [`CategoricalArrays`](https://github.com/JuliaData/CategoricalArrays.jl)) and relationals as `ARFFTable`.
 
 **Keyword options.**
+- `delim=','`: Delimiter for dense records, including nested relational data. Pass `delim='\t'` for tabs. Sparse records use commas between indexed entries.
 - `missingcols=:auto`: Controls which columns may contain missing data (`?`). It can be `:auto`, `:all`, `:none`, a set or vector of column names (symbols), or a function taking a symbol and returning true if that column can contain missing. If the table is being read in a streaming fashion, then `:auto` behaves the same as `:all`.
 - `missingnan=false`: Convert missing values in numeric columns to NaN. This is equivalent to excluding these columns in `missingcols`.
 - `categorical=true`: When false, nominal columns are converted to `String` instead of `CategoricalValue{String}`.
